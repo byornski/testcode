@@ -34,6 +34,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import List
 
 try:
     import testcode2
@@ -212,6 +213,8 @@ actions: list of testcode2 actions to run.
     parser.add_option('-v', '--verbose', default=1, action="count", 
             dest='verbose', help='Increase verbosity of output.  Can be '
             'specified multiple times.')
+    parser.add_option('--xml', type='str', dest='xml_file', help='Write a '
+    'JUnit XML file containing the results of running the test suite')
 
     (options, args) = parser.parse_args(args)
 
@@ -291,6 +294,7 @@ tot_nprocs: total number of processors available to run tests on.  As many
     the same time.  If less than one and cluster_queue is not set, then
     tot_nprocs is ignored and the tests are run sequentially (default).
 '''
+    
     def run_test_worker(semaphore, semaphore_lock, tests, *run_test_args):
         '''Launch a test after waiting until resources are available to run it.
 
@@ -392,7 +396,7 @@ run_test_args: arguments to pass to test.run_test method.
             test.run_test(verbose, cluster_queue, os.getcwd())
 
 
-def compare_tests(tests, verbose=1):
+def compare_tests(tests: List[testcode2.Test], verbose=1):
     '''Compare tests.
 
 tests: list of tests.
@@ -651,6 +655,69 @@ verbose: level of verbosity in output (no output if <1).
             print('Benchmark: %s.' % (tests[0].test_program.benchmark[0]))
         print('')
 
+import xml.etree.ElementTree as ET
+def write_xml(filename: str, tests: List[testcode2.Test]):
+    '''Write the results of the tests to an xml file
+    
+filename: name of file to write
+tests: list of tests
+'''
+
+
+    def add_failure(xml_node, fail_type, message):
+        '''Add a failure node with the corresponding message'''
+        fail_xml = ET.SubElement(xml_node, fail_type)
+        if message:
+            fail_xml.set('message', message)
+
+    # Zero counters for number of tests
+    total_tests = 0
+    num_errored = 0
+    num_skipped = 0
+    num_failed = 0
+
+    test_root = ET.Element('testsuite')
+    xml_tree = ET.ElementTree(test_root)
+    for test in tests:
+        for test_id in test.status:
+            
+            # Create a node for this test
+            test_xml_node = ET.SubElement(test_root,'testcase')
+            test_xml_node.set('name', test.name)
+            total_tests += 1
+
+            test_status = test.status[test_id]
+            
+            # Get the test message if available
+            if test_id in test.msg:
+                msg = test.msg[test_id]
+            else:
+                msg = None
+            
+            # Add an element for failed tests
+            if test_status.failed():
+                num_failed += 1
+                add_failure(test_xml_node, 'failure', msg)
+            elif test_status.skipped():
+                num_skipped += 1
+                add_failure(test_xml_node, 'skipped', msg)
+            elif not test_status.passed():
+                num_errored += 1
+                add_failure(test_xml_node, 'error', msg)
+            else:
+                # Passed test
+                pass
+
+    # Add totals for tests, failed tests, etc
+    test_root.set('tests', str(total_tests))
+    test_root.set('errors', str(num_errored))
+    test_root.set('failures', str(num_failed))
+    test_root.set('skipped', str(num_skipped))
+
+    # Write to file
+    xml_tree.write(filename)
+
+
 def end_status(tests, not_checked=0, verbose=1, final=True):
     '''Print a footer containing useful information.
 
@@ -795,6 +862,9 @@ args: command-line arguments passed to testcode2.
     if 'make-benchmarks' in actions:
         make_benchmarks(test_programs, tests, userconfig, start_time,
                 options.insert)
+
+    if options.xml_file:
+        write_xml(options.xml_file,tests)
 
     return ret_val
 

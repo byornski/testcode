@@ -230,6 +230,7 @@ class Test:
             self.inputs_args = [('', '')]
 
         self.status = dict( (inp_arg, None) for inp_arg in self.inputs_args )
+        self.msg = self.status.copy()
 
         # 'Decorate' functions which require a directory lock in order for file
         # access to be thread-safe.
@@ -317,7 +318,8 @@ class Test:
                         (status, msg) = self.skip_job(test_input, test_arg,
                                                       verbose)
                     if status.skipped():
-                        self._update_status(status, (test_input, test_arg))
+                        # Is msg actually defined here?
+                        self._update_status(status, msg, (test_input, test_arg))
                         if verbose > 0 and verbose < 3:
                             sys.stdout.write(
                                     util.info_line(self.path,
@@ -335,7 +337,7 @@ class Test:
             if verbose > 2:
                 err = 'Test(s) in %s failed.\n%s' % (self.path, err)
             status = validation.Status([False])
-            self._update_status(status, (test_input, test_arg))
+            self._update_status(status, err, (test_input, test_arg))
             if verbose > 0 and verbose < 3:
                 info_line = util.info_line(self.path, test_input, test_arg, rundir)
                 sys.stdout.write(info_line)
@@ -347,7 +349,7 @@ class Test:
             status = validation.Status(name='skipped')
             for ((test_input, test_arg), stat) in self.status.items():
                 if not self.status[(test_input,test_arg)]:
-                    self._update_status(status, (test_input, test_arg))
+                    self._update_status(status, err, (test_input, test_arg))
                     if verbose > 2:
                         cmd = self.test_program.run_cmd(test_input, test_arg,
                                                         self.nprocs)
@@ -492,7 +494,7 @@ first, during initialisation.'''
                 msg = sys.exc_info()[1]
             status = validation.Status([False])
 
-        self._update_status(status, (input_file, args))
+        self._update_status(status, msg, (input_file, args))
         if verbose > 0 and verbose < 3:
             info_line = util.info_line(self.path, input_file, args, rundir)
             sys.stdout.write(info_line)
@@ -655,10 +657,11 @@ Assume function is executed in self.path.'''
 
         os.chdir(oldcwd)
 
-    def _update_status(self, status, inp_arg):
+    def _update_status(self, status, msg, inp_arg):
         '''Update self.status with success of a test.'''
         if status:
             self.status[inp_arg] = status
+            self.msg[inp_arg] = msg
         else:
             # Something went wrong.  Store a Status failed object.
             self.status[inp_arg] = validation.Status([False])
